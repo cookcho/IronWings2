@@ -192,7 +192,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R96';
+const VER='R97';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -2006,7 +2006,7 @@ let muzzle=0, chain=0, chainT=0, slowT=0, clankT=0;
 
 function ring(x,y,max,col,w,life){ rings.push({x,y,r:max*.18,max,col,w:w||3,life:life||22,l0:life||22}); }
 function spark(x,y,n,col){
-  if(parts.length>300) return;                 /* 명중 불꽃도 상한을 지킨다 */
+  if(parts.length>partCap()) return;          /* 명중 불꽃도 상한을 지킨다 */
   if(parts.length+n>300) n=Math.max(1,300-parts.length);
   for(let i=0;i<n;i++){ const a=rnd(0,TAU), sp=rnd(2,7);
     parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:rnd(4,10),c:col||'#fffbe6',r:rnd(1,2.4),g:0,mx:10}); }
@@ -2105,7 +2105,7 @@ function reset(){
 
 /* ==================== 생성 ==================== */
 function boom(x,y,n,col,sp,size){
-  if(parts.length>260) return;
+  if(parts.length>partCap()) return;
   if(parts.length+n>260) n=Math.max(1,260-parts.length);
   for(let i=0;i<n;i++){
     const a=rnd(0,TAU), s=rnd(.4,1)*(sp||3)*1.35;
@@ -2114,7 +2114,7 @@ function boom(x,y,n,col,sp,size){
   }
 }
 function smoke(x,y,n,col){
-  if(parts.length>260) return;
+  if(parts.length>partCap()) return;
   if(parts.length+n>260) n=Math.max(1,260-parts.length);
   for(let i=0;i<n;i++)
     parts.push({x:x+rnd(-3,3),y:y+rnd(-3,3),vx:rnd(-.4,.4),vy:rnd(.2,1.2),
@@ -2504,13 +2504,13 @@ function update(dt){
      지형을 H 에서 되돌리면 타일 중간에서 그림이 통째로 튄다 */
   scFar=(scFar+.90*dt)%H;
   const _th=terrain?terrain.th:H; scGnd=(scGnd+.62*dt)%_th;
+  const dr=Math.pow(.88,dt);                 /* 공기저항 — 파편마다 같은 값이라 한 번만 구한다 */
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i];
     p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=p.g*dt;
-    const dr=Math.pow(.88,dt);               /* 공기저항 — 튀다가 멎는다 */
     p.vx*=dr; p.vy*=dr;
     p.life-=dt;
-    if(p.life<=0) parts.splice(i,1);
+    if(p.life<=0){ parts[i]=parts[parts.length-1]; parts.pop(); }   /* 순서는 상관없다 */
   }
   for(let i=rings.length-1;i>=0;i--){ const r=rings[i];
     r.r+=(r.max-r.r)*.19*dt; r.life-=dt; if(r.life<=0) rings.splice(i,1); }
@@ -3310,6 +3310,9 @@ function rr(x,y,w,h,r){
   ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath(); ctx.fill();
 }
+/* 파편 상한 — 느린 기기에서는 적게 둔다.
+   파편이 150개쯤 쌓이면 계산만으로 한 프레임에 20ms 넘게 걸렸다. */
+function partCap(){ return FX>=3 ? 190 : (FX>=2 ? 125 : 80); }
 function eflame(x,y,w,L,jet,ph){
   if(_shadowPass) return;        /* 불꽃은 그림자도 반사도 만들지 않는다 */          /* 엔진 배기 불꽃 (보스·적기 공용) */
   const fz=.60+.40*Math.sin(time*(jet?.55:.42)+(ph||0));
