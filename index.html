@@ -193,7 +193,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R98';
+const VER='R99';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -3320,6 +3320,10 @@ function sprite(key,w,h,draw){
   s={c,w,h}; SPR.set(key,s); return s;
 }
 function stamp(s,x,y){ ctx.drawImage(s.c, x-s.w/2, y-s.h/2, s.w, s.h); }
+/* 미리 그려 두는 동안에는 시간 따라 변하는 것들을 건너뛰고,
+   어디에 무엇을 그려야 하는지만 적어 둔다. 찍은 뒤 그 자리에 따로 그린다. */
+let _capt=0, _deferQ=[];
+
 function poly(pts){ ctx.beginPath(); ctx.moveTo(pts[0],pts[1]);
   for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]); ctx.closePath(); ctx.fill(); }
 function polyLine(pts){ ctx.beginPath(); ctx.moveTo(pts[0],pts[1]);
@@ -4172,7 +4176,8 @@ function grime(x,y,w,h,seed){                /* 그을음·녹 얼룩 */
   }
   ctx.restore();
 }
-function lamp(x,y,r,col,ph){                 /* 점멸등 */
+function lamp(x,y,r,col,ph){
+  if(_capt){ _deferQ.push(['lamp',x,y,r,col,ph]); return; }                 /* 점멸등 */
   const on=(Math.floor(time/13+(ph||0))%2)===0;
   ctx.fillStyle='rgba(8,10,14,.8)'; ctx.beginPath(); ctx.arc(x,y,r+.9,0,TAU); ctx.fill();
   ctx.fillStyle=on?col:'rgba(70,70,80,.9)';
@@ -5325,7 +5330,8 @@ function drawBossBody(){
 /* ==================== 그리기: 지상물 ==================== */
 function propW(p){ return (PROPDEF[p.kind]||PROPDEF.tank).w; }
 function propH(p){ return (PROPDEF[p.kind]||PROPDEF.tank).h; }
-function wake(w,l,t){        /* 함선 항적 — 뱃머리 포말 덩어리와 선미 물거품 */
+function wake(w,l,t){
+  if(_capt){ _deferQ.push(['wake',w,l]); return; }        /* 함선 항적 — 뱃머리 포말 덩어리와 선미 물거품 */
   ctx.save();
   /* 뱃머리: 좌우로 밀려나는 부드러운 포말 (선이 아니라 덩어리) */
   for(let i=0;i<3;i++){
@@ -5356,6 +5362,7 @@ function deck(w,l,col){
   for(let y=-l+4;y<l;y+=6){ ctx.beginPath(); ctx.moveTo(-w,y); ctx.lineTo(w,y); ctx.stroke(); }
 }
 function turretAt(x,y,r,ln){
+  if(_capt){ _deferQ.push(['turret',x,y,r,ln]); return; }
   ctx.fillStyle='#555c64'; ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill();
   ctx.fillStyle='#6d757e'; ctx.beginPath(); ctx.arc(x,y,r*.72,0,TAU); ctx.fill();
   const ang=Math.atan2(player.y-(y+0),player.x-x);
@@ -5398,7 +5405,36 @@ function groundGlow(w,h,col){    /* 배경에서 뜨게 하는 옅은 후광 —
   ctx.beginPath(); ctx.ellipse(0,0,w*.42,h*.40,0,0,TAU); ctx.fill();
   ctx.restore();
 }
+/* 구조물은 모양이 고정이라 한 번만 그려 두면 된다.
+   배 한 척이 도형 스무 개가 넘어, 화면에 몇 척만 들어와도 주기적으로 버거웠다. */
 function drawProp(p){
+  if(_capt){ _drawProp(p); return; }
+  const key='pr|'+p.kind;
+  let s=SPR.get(key);
+  if(!s){
+    const d=PROPDEF[p.kind]||{w:40,h:60};
+    const R=Math.ceil(Math.max(d.w,d.h)*1.7)+14;
+    const q=_deferQ=[];
+    s=sprite(key, R*2, R*2, ()=>{
+      _capt=1;
+      const ox=p.x, oy=p.y, ot=p.t; p.x=0; p.y=0; p.t=0;
+      try{ _drawProp(p); } finally { p.x=ox; p.y=oy; p.t=ot; _capt=0; }
+    });
+    s.defer=q.slice();
+  }
+  ctx.save(); ctx.translate(p.x,p.y);
+  for(const d of s.defer) if(d[0]==='wake') wake(d[1],d[2],p.t);   /* 물보라는 배 아래 */
+  ctx.restore();
+  stamp(s,p.x,p.y);
+  ctx.save(); ctx.translate(p.x,p.y);
+  for(const d of s.defer){                                        /* 포탑·점멸등은 위에 */
+    if(d[0]==='turret') turretAt(d[1],d[2],d[3],d[4]);
+    else if(d[0]==='smoke') smokeHint(d[1],d[2],p.t*1.5);
+    else if(d[0]==='lamp') lamp(d[1],d[2],d[3],d[4],d[5]);
+  }
+  ctx.restore();
+}
+function _drawProp(p){
   ctx.save(); ctx.translate(p.x,p.y);
   const k=p.kind;
   if(k==='ship'){                      /* 구축함 */
@@ -5617,6 +5653,7 @@ function drawProp(p){
   ctx.restore();
 }
 function smokeHint(x,y,t){             /* 굴뚝 연기 */
+  if(_capt){ _deferQ.push(['smoke',x,y]); return; }
   ctx.fillStyle='rgba(190,190,190,.28)';
   for(let i=0;i<3;i++){
     const o=(t*.6+i*14)%42;
