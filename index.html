@@ -103,6 +103,10 @@
   #bomb.on{display:flex}
   #bomb:active{background:rgba(232,217,154,.28)}
   #bomb b{font-size:25px;line-height:1}
+  /* 조작 안내 — 건너뛰기는 항상 손 닿는 자리에 */
+  #bTutSkip{position:absolute;left:50%;transform:translateX(-50%);top:46px;
+    display:none;z-index:6;opacity:.8;font-size:11px;padding:6px 14px}
+  #bTutSkip.on{display:block}
 </style>
 </head>
 <body>
@@ -115,12 +119,14 @@
     <button class="mini" id="mPause">❚❚</button>
   </div>
   <button id="bomb"><b>3</b>폭탄</button>
+  <button class="btn ghost tiny" id="bTutSkip">건너뛰기</button>
 
   <div class="sheet on" id="shTitle">
     <button class="btn big" id="bStart">출 격</button>
     <button class="btn ghost" id="bShop">해금 상점</button>
     <div style="display:flex;gap:8px">
       <button class="btn ghost tiny" id="bRank">기록</button>
+      <button class="btn ghost tiny" id="bTut">조작 안내</button>
       <button class="btn ghost tiny" id="bUpd">업데이트 확인</button>
     </div>
     <p class="keys">화면을 끌어 조종 · 사격은 자동<br>
@@ -185,7 +191,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R90';
+const VER='R91';
 /* ===================== 강화 카드 =====================
    승급 포인트가 차면 3장 중 1장을 고른다. 효과는 곱으로 쌓인다. */
 /* 출격 기체 — 체력·시작 무기·카드 후보 수가 다르다 */
@@ -2175,6 +2181,7 @@ function hurt(d){
 }
 function useBomb(){
   if(state!=='play'||bombs<=0) return;
+  if(tutOn) tutBombs++;
   bombs--; updBomb(); sfx.bomb(); haptic(HAP.bomb,5);
   flash=48; flashCol='255,250,220'; shake=22; slowT=Math.max(slowT,26);
   invT=Math.max(invT,110);
@@ -2301,6 +2308,9 @@ function nearestTarget(x,y){
 
 /* ==================== 업데이트 ==================== */
 function update(dt){
+  /* 안내 중에는 적이 쏘지 않는다. 그래야 아이가 마음 놓고 조작을 익힌다.
+     eshot 한 곳만 막으면 새는 곳이 있어, 매 프레임 비워 확실히 막는다 */
+  if(tutOn){ ebullets.length=0; invT=Math.max(invT,30); bannerT=0; tutCheck(); stageT=Math.min(stageT,60); }
   if(slowT>0){ slowT-=dt; dt*=.40; }      /* 격추·보스 격파 순간의 슬로모션 */
   if(clankT>0) clankT-=dt;
   time+=dt;
@@ -2618,7 +2628,8 @@ function update(dt){
       }
     }
     if(e.hp<=0){
-      chain++; chainT=90; runKills++; if(chain>runChain) runChain=chain;
+      chain++; chainT=90; runKills++; if(tutOn) tutKills++;
+      if(chain>runChain) runChain=chain;
       const gain=Math.round(e.sc*(1+Math.min(chain,20)*.05));
       addScore(gain); addExp(((EKIND[e.kind]||EKIND.zero).sc)/100); sfx.pop();
       /* 격파 반동 — 맞은 방향으로 튕겨나가며 회전하다 터진다 */
@@ -6003,7 +6014,7 @@ function render(){
   if(state!=='title') drawPops(); else drawTitleLogo();
   ctx.restore();
   if(flash>0){ ctx.fillStyle='rgba('+flashCol+','+clamp(flash/50,0,.5)+')'; ctx.fillRect(0,0,W,H); }
-  if(state!=='title'){ drawHUD(); drawWarn(); drawBanner(); }
+  if(state!=='title'){ drawHUD(); drawWarn(); drawBanner(); drawTutorial(); }
   if(state==='card') drawCards();
   if(!LOWFX) ctx.drawImage(crtCv,0,0,W,H);
 }
@@ -6209,6 +6220,7 @@ cv.addEventListener('pointermove',e=>{
   const dx=(e.clientX-px)*k*1.12, dy=(e.clientY-py)*k*1.12;
   player.x=clamp(player.x+dx,18,W-18); player.y=clamp(player.y+dy,44,H-28);
   player.roll=clamp(player.roll+dx*.05,-1,1);
+  if(tutOn) tutMoved+=Math.abs(dx)+Math.abs(dy);
   tapMove+=Math.abs(e.clientX-px)+Math.abs(e.clientY-py);
   px=e.clientX; py=e.clientY;
 });
@@ -6228,13 +6240,105 @@ addEventListener('keyup',e=>{ keys[e.key]=false; });
 /* ==================== 화면 ==================== */
 function show(id,on){ $(id).classList.toggle('on',on); }
 function updBomb(){ $('bomb').querySelector('b').textContent=bombs; }
+/* ===== 첫 조작 안내 =====
+   조작법을 글로 적어두면 아무도 읽지 않는다. 직접 해보게 하고,
+   해내면 다음으로 넘어간다. 안내 중에는 적이 쏘지 않아 안전하다. */
+const TUTSTEP=[
+  {msg:'화면을 끌어서 움직여 보세요', sub:'어디를 잡아도 됩니다',  need:'move'},
+  {msg:'총은 저절로 나가요',          sub:'적에게 맞춰 보세요',    need:'kill'},
+  {msg:'화면을 두 번 톡톡 치면 폭탄',  sub:'위험할 때 쓰세요',      need:'bomb'}
+];
+let tutReplay=0;
+let tutOn=0, tutStep=0, tutT=0, tutMoved=0, tutKills=0, tutBombs=0, tutDone=0;
+function tutSeen(){ try{ return localStorage.getItem('iw.tut')==='1'; }catch(_){ return false; } }
+function tutMark(){ try{ localStorage.setItem('iw.tut','1'); }catch(_){} }
+function tutStart(){
+  tutOn=1; tutStep=0; tutT=0; tutMoved=0; tutKills=0; tutBombs=0; tutDone=0;
+  bannerT=0;                       /* 스테이지 배너와 안내 글이 겹치지 않게 */
+  $('bTutSkip').classList.add('on');
+}
+function tutEnd(){
+  tutOn=0; tutMark();
+  $('bTutSkip').classList.remove('on');
+}
+/* 한 단계를 해냈는지 본다 */
+function tutCheck(){
+  if(!tutOn) return;
+  tutT++;
+  if(tutDone){ if(tutT>96) tutEnd(); return; }
+  const st=TUTSTEP[tutStep]; if(!st) { tutDone=1; tutT=0; return; }
+  const ok = st.need==='move' ? tutMoved>110
+           : st.need==='kill' ? tutKills>=3
+           : tutBombs>=1;
+  if(ok){
+    tutStep++; tutT=0; sfx.pop&&sfx.pop();
+    if(tutStep>=TUTSTEP.length){ tutDone=1; bombs=Math.max(bombs,D.bombs); updBomb(); }
+  }
+}
+function drawTutorial(){
+  if(!tutOn) return;
+  const done=tutDone, st=TUTSTEP[tutStep];
+  ctx.save();
+  /* 글이 읽히도록 위쪽만 살짝 눌러준다 */
+  const gg=ctx.createLinearGradient(0,H*.12,0,H*.40);
+  gg.addColorStop(0,'rgba(6,10,16,0)'); gg.addColorStop(.42,'rgba(6,10,16,.62)');
+  gg.addColorStop(1,'rgba(6,10,16,0)');
+  ctx.fillStyle=gg; ctx.fillRect(0,H*.12,W,H*.28);
+
+  const y=H*.25, pu=.5+.5*Math.sin(time*.10);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+  if(done){
+    ctx.font='bold 25px ui-monospace,monospace';
+    ctx.lineWidth=7; ctx.strokeStyle='rgba(6,10,16,.9)'; ctx.strokeText('준비 완료!',W/2,y);
+    ctx.fillStyle='#ffd98a'; ctx.fillText('준비 완료!',W/2,y);
+    ctx.font='bold 13px ui-monospace,monospace';
+    ctx.lineWidth=5; ctx.strokeStyle='rgba(6,10,16,.9)';
+    ctx.strokeText('이제 진짜 전투입니다',W/2,y+30);
+    ctx.fillStyle='#cfe0c6'; ctx.fillText('이제 진짜 전투입니다',W/2,y+30);
+  } else {
+    /* 몇 번째 단계인지 */
+    ctx.font='bold 11px ui-monospace,monospace';
+    ctx.lineWidth=5; ctx.strokeStyle='rgba(6,10,16,.9)';
+    const tag=(tutStep+1)+' / '+TUTSTEP.length;
+    ctx.strokeText(tag,W/2,y-34); ctx.fillStyle='#8fb08a'; ctx.fillText(tag,W/2,y-34);
+    ctx.font='bold 19px ui-monospace,monospace';
+    ctx.lineWidth=7; ctx.strokeStyle='rgba(6,10,16,.92)'; ctx.strokeText(st.msg,W/2,y);
+    ctx.fillStyle='#ffe9a8'; ctx.fillText(st.msg,W/2,y);
+    ctx.font='bold 12px ui-monospace,monospace';
+    ctx.lineWidth=5; ctx.strokeStyle='rgba(6,10,16,.9)'; ctx.strokeText(st.sub,W/2,y+26);
+    ctx.fillStyle='#b9c7ae'; ctx.fillText(st.sub,W/2,y+26);
+
+    /* 눈으로 보는 신호 */
+    if(st.need==='move'){
+      const sw=Math.sin(time*.06)*40;
+      ctx.globalAlpha=.30+.30*pu;
+      ctx.strokeStyle='#ffe9a8'; ctx.lineWidth=3; ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(player.x+sw,player.y+44,17,0,TAU); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(player.x-46,player.y+44); ctx.lineTo(player.x+46,player.y+44);
+      ctx.stroke();
+      ctx.lineCap='butt';
+    } else if(st.need==='bomb'){
+      for(let i=0;i<2;i++){
+        const t=(time*.05+i*.5)%1;
+        ctx.globalAlpha=(1-t)*.55;
+        ctx.strokeStyle='#ffd98a'; ctx.lineWidth=3;
+        ctx.beginPath(); ctx.arc(W/2,H*.62,16+t*34,0,TAU); ctx.stroke();
+      }
+      ctx.globalAlpha=.85; ctx.fillStyle='#ffd98a';
+      ctx.beginPath(); ctx.arc(W/2,H*.62,7,0,TAU); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
 function startGame(){
   goFull(); keepAwake();
   audioOn(); reset(); state='play';
+  if(!tutSeen()||tutReplay){ tutReplay=0; tutStart(); } else tutOn=0;
   show('shTitle',false); show('shOver',false); show('shPause',false);
   $('hudbtns').classList.add('on'); $('bomb').classList.add('on'); kick();
 }
 function gameOver(){
+  if(tutOn) tutEnd();
   state='over'; boom(player.x,player.y,44,'#ffcc4d',5,1.3); sfx.bigboom();
   const rec=[
     ['점수',      score,        SAVE.best],
@@ -6364,6 +6468,8 @@ $('mVib').onclick=()=>{
 paintVib();
 if(!navigator.vibrate){ const b=$('mVib'); if(b) b.style.display='none'; }  /* 미지원 기기는 숨김 */
 $('bomb').addEventListener('pointerdown',e=>{ e.stopPropagation(); useBomb(); });
+$('bTutSkip').addEventListener('pointerdown',e=>{ e.stopPropagation(); tutEnd(); });
+$('bTut').addEventListener('pointerdown',e=>{ e.stopPropagation(); tutReplay=1; startGame(); });
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){ pause(); } else { kick(); }
 });
