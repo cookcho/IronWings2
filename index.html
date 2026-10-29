@@ -168,7 +168,8 @@
 
 <script>
 'use strict';
-const cv=document.getElementById('game'), ctx=cv.getContext('2d');
+const cv=document.getElementById('game');
+let ctx=cv.getContext('2d');   /* 미리 그려 두는 그림을 만들 때 잠시 바꿔 쓴다 */
 const W=360,H=640;
 /* ===== 그리기 해상도 =====
    논리 좌표는 360x640 그대로다. 실제로 칠하는 픽셀만 RS 배로 늘린다.
@@ -192,7 +193,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R97';
+const VER='R98';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -3300,6 +3301,25 @@ function doBossAttack(){
 }
 
 /* ==================== 그리기: 기체 ==================== */
+
+/* ===== 미리 그려 두고 도장처럼 찍기 =====
+   탄 하나를 그릴 때마다 서너 겹을 따로 칠하면 느린 기기가 버겁다.
+   같은 그림은 한 번만 그려 두고 drawImage 한 번으로 찍는다.
+   RS 배로 떠 두므로 화면에 1:1 로 맞아 선명도는 그대로다. */
+const SPR=new Map();
+function sprite(key,w,h,draw){
+  let s=SPR.get(key); if(s) return s;
+  const c=document.createElement('canvas');
+  c.width=Math.ceil(w*RS); c.height=Math.ceil(h*RS);
+  const g=c.getContext('2d');
+  g.imageSmoothingEnabled=false;
+  g.setTransform(RS,0,0,RS,0,0);
+  g.translate(w/2,h/2);
+  const old=ctx; ctx=g;
+  try{ draw(); } finally { ctx=old; }
+  s={c,w,h}; SPR.set(key,s); return s;
+}
+function stamp(s,x,y){ ctx.drawImage(s.c, x-s.w/2, y-s.h/2, s.w, s.h); }
 function poly(pts){ ctx.beginPath(); ctx.moveTo(pts[0],pts[1]);
   for(let i=2;i<pts.length;i+=2) ctx.lineTo(pts[i],pts[i+1]); ctx.closePath(); ctx.fill(); }
 function polyLine(pts){ ctx.beginPath(); ctx.moveTo(pts[0],pts[1]);
@@ -3328,7 +3348,16 @@ function eflame(x,y,w,L,jet,ph){
   poly([x-w*.52,y, x+w*.52,y, x+w*.20,y+ln*.62, x-w*.20,y+ln*.62]);
   ctx.restore();
 }
-function nprop(y,r,a){                   /* 엔진 나셀 프로펠러 — 직선 블레이드 */
+/* 회전 프로펠러 — 둥근 사각형을 12개나 그린다.
+   3엽이라 120도마다 같은 모양이므로, 그 한 바퀴를 여섯 단계로 나눠
+   미리 그려 두고 찍는다. 눈으로는 계속 도는 것으로 보인다. */
+function nprop(y,r,a){
+  const P=TAU/3, STEP=6;
+  const q=Math.floor((((a%P)+P)%P)/P*STEP)%STEP;
+  const s=sprite('np|'+r.toFixed(1)+'|'+q, r*2.5, r*2.5, ()=>_nprop(0,r,q*P/STEP));
+  ctx.drawImage(s.c, -s.w/2, y-s.h/2, s.w, s.h);
+}
+function _nprop(y,r,a){                   /* 엔진 나셀 프로펠러 — 직선 블레이드 */
   ctx.save(); ctx.translate(0,y);
   const bw=Math.max(1.4,r*.22);
   ctx.save(); ctx.rotate(a-.32); ctx.globalAlpha=.14; ctx.fillStyle='#eef4f8';
@@ -5672,6 +5701,17 @@ function drawZaps(){
   }
   ctx.globalAlpha=1;
 }
+/* 적탄 그림 — 한 번만 그려 두고 쓴다 */
+function EB_BALL(){ return sprite('eb.ball',22,22,()=>{
+  ctx.fillStyle='rgba(255,140,40,.4)'; ctx.beginPath(); ctx.arc(0,0,9,0,TAU); ctx.fill();
+  ctx.fillStyle='#ffb340'; ctx.beginPath(); ctx.arc(0,0,5.4,0,TAU); ctx.fill();
+  ctx.fillStyle='#fff3d0'; ctx.beginPath(); ctx.arc(-1.2,-1.2,2.2,0,TAU); ctx.fill();
+}); }
+function EB_SHELL(){ return sprite('eb.shell',30,30,()=>{
+  ctx.fillStyle='rgba(255,90,60,.35)'; ctx.beginPath(); ctx.arc(0,0,13,0,TAU); ctx.fill();
+  ctx.fillStyle='#7d3a2a'; rr(-5,-9,10,18,5);
+  ctx.fillStyle='#e2a24c'; poly([0,-11, 5,-5, -5,-5]);
+}); }
 function drawEBullets(){
   for(const b of ebullets){
     if(b.type==='bomb'){
@@ -5686,13 +5726,9 @@ function drawEBullets(){
       ctx.fillStyle='#ffd58a'; rr(-1.4,-7,2.8,11,1.4); ctx.restore();
     } else if(b.type==='shell'){
       ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(Math.atan2(b.vy,b.vx)+PI/2);
-      ctx.fillStyle='rgba(255,90,60,.35)'; ctx.beginPath(); ctx.arc(0,0,13,0,TAU); ctx.fill();
-      ctx.fillStyle='#7d3a2a'; rr(-5,-9,10,18,5);
-      ctx.fillStyle='#e2a24c'; poly([0,-11, 5,-5, -5,-5]); ctx.restore();
+      stamp(EB_SHELL(), 0, 0); ctx.restore();
     } else {
-      ctx.fillStyle='rgba(255,140,40,.4)'; ctx.beginPath(); ctx.arc(b.x,b.y,9,0,TAU); ctx.fill();
-      ctx.fillStyle='#ffb340'; ctx.beginPath(); ctx.arc(b.x,b.y,5.4,0,TAU); ctx.fill();
-      ctx.fillStyle='#fff3d0'; ctx.beginPath(); ctx.arc(b.x-1.2,b.y-1.2,2.2,0,TAU); ctx.fill();
+      stamp(EB_BALL(), b.x, b.y);        /* 가장 흔한 탄 — 미리 그려 둔 그림을 찍는다 */
     }
   }
 }
