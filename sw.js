@@ -1,6 +1,6 @@
 /* IRON WINGS II — 서비스워커
    목표: (1) 인터넷이 없어도 반드시 실행된다  (2) 있으면 최신본을 가져온다 */
-const CACHE = 'ironwings2-r89';
+const CACHE = 'ironwings2-r90';
 const FILES = ['./', './index.html', './manifest.webmanifest',
                './icon-192.png', './icon-512.png', './icon-mask-512.png'];
 const NET_TIMEOUT = 2500;   // 신호가 약할 때 무한정 기다리지 않는다

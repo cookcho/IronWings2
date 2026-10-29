@@ -78,17 +78,17 @@
   .btn.big{font-size:24px;padding:15px 46px;letter-spacing:.25em;
     color:#241802;-webkit-text-fill-color:#241802;
     text-shadow:0 1px 0 rgba(255,255,255,.55);
-    background:linear-gradient(#e0e6ec,#9aa3ad);
-    color:#1a1418;-webkit-text-fill-color:#1a1418;
-    border:2px solid #b4362e;
-    box-shadow:0 5px 0 #6b2820,0 0 26px rgba(180,54,46,.35)}
+    background:linear-gradient(#ffd98a,#e8913c);
+    color:#2a1606;-webkit-text-fill-color:#2a1606;
+    border:2px solid #8a2e1e;
+    box-shadow:0 5px 0 #8a4a16,0 0 30px rgba(255,160,70,.42)}
   .btn.big:active{transform:translateY(4px);box-shadow:0 1px 0 #7d6524}
   .sheet h1{margin:0;font-size:34px;letter-spacing:.08em;color:#e8d99a;
     text-shadow:0 3px 0 #4a3d17,0 0 20px rgba(220,190,110,.3)}
   .sheet h1 small{display:block;font-size:13px;letter-spacing:.4em;color:#8fa08a;margin-top:6px}
   .sheet p{margin:0;font-size:14px;line-height:1.75;color:#a8b8a6;max-width:20em}
   .big{font-size:25px;color:#e8d99a;margin:0}
-  .keys{font-size:12px;color:#728473}
+  .keys{font-size:13px;color:#b9c7ae;line-height:1.7;text-shadow:0 1px 2px rgba(0,0,0,.7)}
 
   #hudbtns{position:absolute;top:7px;right:7px;display:none;gap:6px}
   #hudbtns.on{display:flex}
@@ -123,8 +123,8 @@
       <button class="btn ghost tiny" id="bRank">기록</button>
       <button class="btn ghost tiny" id="bUpd">업데이트 확인</button>
     </div>
-    <p class="keys">화면을 끌어 조종 · 총은 자동 · 오른쪽 아래는 폭탄<br>
-       적을 잡으면 <b>강화 카드</b>를 고를 수 있어요<br>B 폭탄 · ★ ◎ 점수 · ✚ 수리 · ✈ 호위기 · ♥ 예비기</p>
+    <p class="keys">화면을 끌어 조종 · 사격은 자동<br>
+       두 번 톡톡 치면 <b>폭탄</b></p>
   </div>
 
   <div class="sheet" id="shRank">
@@ -185,7 +185,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R89';
+const VER='R90';
 /* ===================== 강화 카드 =====================
    승급 포인트가 차면 3장 중 1장을 고른다. 효과는 곱으로 쌓인다. */
 /* 출격 기체 — 체력·시작 무기·카드 후보 수가 다르다 */
@@ -6052,18 +6052,25 @@ function goldText(txt,x,y,size,h1,h2,h3){
   ctx.fillStyle=lg; ctx.fillText(txt,x,y);
 }
 function drawTitleLogo(){
-  ctx.fillStyle='rgba(8,6,10,.42)'; ctx.fillRect(0,0,W,H);
-  const gtop=ctx.createLinearGradient(0,0,0,260);
-  gtop.addColorStop(0,'rgba(10,6,10,.80)'); gtop.addColorStop(1,'rgba(10,6,10,0)');
-  ctx.fillStyle=gtop; ctx.fillRect(0,0,W,260);
+  /* 예전에는 화면 전체에 42% 검은 막을 덮고 그 위에 또 어두운 그라데이션을 얹었다.
+     로고는 읽혔지만 게임이 우중충해 보였다. 위쪽에만, 필요한 만큼만 깐다 */
+  const gtop=ctx.createLinearGradient(0,0,0,250);
+  gtop.addColorStop(0,'rgba(8,10,20,.66)'); gtop.addColorStop(.72,'rgba(8,10,20,.26)');
+  gtop.addColorStop(1,'rgba(8,10,20,0)');
+  ctx.fillStyle=gtop; ctx.fillRect(0,0,W,250);
+  const gbot=ctx.createLinearGradient(0,H-150,0,H);
+  gbot.addColorStop(0,'rgba(8,10,20,0)'); gbot.addColorStop(1,'rgba(8,10,20,.42)');
+  ctx.fillStyle=gbot; ctx.fillRect(0,H-150,W,150);
   const bob=Math.sin(time*.035)*2.5;
 
   /* 리벳 박힌 강철 패널 */
   const py=92+bob, ph=126;
-  ctx.fillStyle='rgba(26,22,26,.88)'; ctx.fillRect(0,py,W,ph);
+  ctx.fillStyle='rgba(32,20,24,.90)'; ctx.fillRect(0,py,W,ph);
   const mg=ctx.createLinearGradient(0,py,0,py+ph);
-  mg.addColorStop(0,'rgba(120,110,120,.22)'); mg.addColorStop(.5,'rgba(255,255,255,.05)');
-  mg.addColorStop(1,'rgba(0,0,0,.28)');
+  mg.addColorStop(0,'rgba(196,96,64,.34)');     /* 위쪽을 달군 쇠처럼 */
+  mg.addColorStop(.46,'rgba(255,236,208,.10)');
+  mg.addColorStop(.54,'rgba(120,40,30,.18)');
+  mg.addColorStop(1,'rgba(0,0,0,.34)');
   ctx.fillStyle=mg; ctx.fillRect(0,py,W,ph);
   ctx.fillStyle='#b4362e'; ctx.fillRect(0,py-3,W,3); ctx.fillRect(0,py+ph,W,3);
   ctx.fillStyle='rgba(180,54,46,.35)'; ctx.fillRect(0,py+ph+4,W,1.4);
@@ -6078,10 +6085,10 @@ function drawTitleLogo(){
     ctx.font='bold '+sz+'px ui-monospace,monospace';
     ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round';
     ctx.lineWidth=sz*.32; ctx.strokeStyle='#100c10'; ctx.strokeText(t,x,y+sz*.05);
-    ctx.lineWidth=sz*.13; ctx.strokeStyle='#6b2820'; ctx.strokeText(t,x,y);
+    ctx.lineWidth=sz*.13; ctx.strokeStyle='#8a2e1e'; ctx.strokeText(t,x,y);
     const g=ctx.createLinearGradient(0,y-sz*.55,0,y+sz*.55);
-    g.addColorStop(0,'#6e737c'); g.addColorStop(.42,'#e8edf2');
-    g.addColorStop(.5,'#9aa3ad'); g.addColorStop(.58,'#f2f6fa'); g.addColorStop(1,'#5a6068');
+    g.addColorStop(0,'#8a6a52'); g.addColorStop(.40,'#ffe9c8');
+    g.addColorStop(.5,'#e8b074'); g.addColorStop(.58,'#fff6e2'); g.addColorStop(1,'#a06038');
     ctx.fillStyle=g; ctx.fillText(t,x,y);
   };
   steel('IRON WINGS',W/2,126+bob,36);
@@ -6101,8 +6108,8 @@ function drawTitleLogo(){
   ctx.restore();
 
   ctx.font='bold 11px ui-monospace,monospace'; ctx.textAlign='center';
-  ctx.fillStyle='#d8c0bc'; ctx.fillText('강 철 의   날 개',W/2,199+bob);
-  ctx.font='bold 9px ui-monospace,monospace'; ctx.fillStyle='#9a8a92';
+  ctx.fillStyle='#ffd9a8'; ctx.fillText('강 철 의   날 개',W/2,199+bob);
+  ctx.font='bold 9px ui-monospace,monospace'; ctx.fillStyle='#c08a6a';
   ctx.fillText('R O G U E   S Q U A D R O N',W/2,216+bob);
 
   /* 기록 */
@@ -6413,7 +6420,7 @@ if('serviceWorker' in navigator){
 }
 
 enemies=[];bullets=[];ebullets=[];items=[];parts=[];props=[];beams=[];
-player={x:W/2,y:H-120,roll:0}; setTheme(1);
+player={x:W/2,y:H-120,roll:0}; setTheme(2);   /* 타이틀은 밝은 남방 제도로 — 첫인상이 어두우면 안 된다 */
 kick();
 </script>
 </body>
