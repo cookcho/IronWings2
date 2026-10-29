@@ -193,7 +193,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R100';
+const VER='R101';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -579,7 +579,7 @@ function advanceStage(){
   runMedal+=gain; popText(W/2,H/2-30,'훈장 +'+gain,'#ffd24a');
   stageNo++; setTheme(stageNo);
   setBanner('STAGE '+stageNo,theme.name); sfx.stage();
-  warmProps();
+  warmProps(); warmEnemies();
   spawnT=150; stageT=0; bossWarn=0; midDone=0;
   ebullets.length=0; beams.length=0;
 }
@@ -3759,7 +3759,80 @@ function drawP38(a){
 }
 /* 적기 (아래를 향함) */
 PLANEFN.push(drawP40,drawP51,drawP47,drawP38,drawF4U,drawF7F,drawP80,drawF86,drawDelta,drawProto);
+/* 엔진 배기 불꽃 — 매 프레임 달라져 미리 그려 둘 수 없다.
+   기체 본체를 찍기 전에 같은 자리에 따로 그린다. */
+function enemyFlame(e){                                 /* 엔진 배기 불꽃 — 몸체보다 먼저(뒤에) 그린다 */
+    const jet = e.kind==='jet'||e.kind==='komet'||e.kind==='minwing'||e.kind==='drone';
+    const twin= e.kind==='bomber'||e.kind==='gunship'||e.kind==='heavy'||e.kind==='chopper';
+    const yb  = e.r*(twin?.70:.92);
+    const xs  = twin ? [-e.r*.62, e.r*.62] : [0];
+    const w   = e.r*(jet?.34:.30), L = e.r*(jet?1.55:1.15);
+    for(const ox of xs){
+      const fz=.6+.4*Math.sin(time*(jet?.55:.42)+ox+e.ph);
+      const ln=L*(.80+.42*Math.random());
+      ctx.save();
+      /* 노즐 주변 발광 */
+      ctx.globalAlpha=fz*.30;
+      ctx.fillStyle = jet ? '#8fd0ff' : '#ff9a4d';
+      ctx.beginPath(); ctx.ellipse(ox,yb+ln*.30,w*1.5,ln*.52,0,0,TAU); ctx.fill();
+      ctx.globalAlpha=1;
+      /* 화염 본체 */
+      ctx.fillStyle = jet ? 'rgba(120,196,255,'+(fz*.85)+')'
+                          : 'rgba(255,140,58,'+(fz*.85)+')';
+      poly([ox-w,yb, ox+w,yb, ox+w*.40,yb+ln, ox-w*.40,yb+ln]);
+      /* 심지 */
+      ctx.fillStyle = jet ? 'rgba(235,250,255,'+(fz*.95)+')'
+                          : 'rgba(255,240,190,'+(fz*.95)+')';
+      poly([ox-w*.52,yb, ox+w*.52,yb, ox+w*.20,yb+ln*.62, ox-w*.20,yb+ln*.62]);
+      ctx.restore();
+    }
+  }
+let _fixA=0;
+/* 적기 그림을 조금씩 미리 떠 둔다.
+   한꺼번에 만들면 그 프레임이 길어지고, 안 만들어 두면
+   새 적기가 처음 나올 때마다 끊긴다. 매 프레임 두 장씩 나눠 만든다. */
+let _warmQ=null;
+function warmEnemies(){
+  _warmQ=[];
+  for(const k of Object.keys(EKIND)) for(let ph=0;ph<6;ph++) _warmQ.push([k,ph]);
+}
+function warmTick(){
+  if(!_warmQ||!_warmQ.length) return;
+  const P=TAU/3;
+  for(let i=0;i<2&&_warmQ.length;i++){
+    const [k,ph]=_warmQ.shift();
+    if(SPR.get('en|'+k+'|0|'+ph)) continue;
+    try{
+      const e=mkEnemy(k,-9999,-9999,{mode:'hover',t:40,fireT:999});
+      e.hit=0; e.elite=0; e.ph = ph*P/6 - time*1.32;
+      drawEnemyPlane(e);          /* 화면 밖이라 보이지 않는다 */
+    }catch(_){}
+  }
+}
+/* 적기도 미리 그려 두고 찍는다 — 화면에 예닐곱 기씩 있어 가장 많이 반복된다.
+   프로펠러 각도는 3엽 주기를 여섯 단계로 나눠 캐시에 함께 담고,
+   매 프레임 달라지는 배기 불꽃만 밖에서 따로 그린다.
+   정예기는 금빛 후광이 맥동하므로 캐시하지 않고 그대로 그린다. */
 function drawEnemyPlane(e){
+  if(_shadowPass || _capt || e.elite){ _enemyPlane(e); return; }
+  const P=TAU/3, ph=Math.floor((((time*1.32+e.ph)%P)+P)%P/P*6)%6;
+  const key='en|'+e.kind+'|'+(e.hit>0?1:0)+'|'+ph;
+  let s=SPR.get(key);
+  if(!s){
+    const k=EKIND[e.kind]||{};
+    const R=Math.ceil(Math.max(e.r*1.7,(k.span||24)*1.0))+12;
+    s=sprite(key,R*2,R*2,()=>{
+      _capt=1; _fixA=ph*P/6;
+      const ox=e.x, oy=e.y; e.x=0; e.y=0;
+      try{ _enemyPlane(e); } finally { e.x=ox; e.y=oy; _capt=0; }
+    });
+  }
+  ctx.save(); ctx.translate(e.x,e.y); ctx.scale(1,-1);
+  enemyFlame(e);                      /* 불꽃은 기체 뒤 */
+  ctx.restore();
+  stamp(s,e.x,e.y);
+}
+function _enemyPlane(e){
   ctx.save(); ctx.translate(e.x,e.y);
   if(!_shadowPass){                       /* 바닥에 번지는 옅은 그늘 */
     ctx.save(); ctx.translate(6,9); ctx.globalAlpha=.14; ctx.fillStyle='#000';
@@ -3791,33 +3864,8 @@ function drawEnemyPlane(e){
     ctx.globalAlpha=.5+.5*pu; ctx.fillStyle='#fff3c0';
     poly([0,-e.r*.24, e.r*.11,-e.r*.09, 0,-e.r*.14, -e.r*.11,-e.r*.09]);
     ctx.restore(); };
-  {                                 /* 엔진 배기 불꽃 — 몸체보다 먼저(뒤에) 그린다 */
-    const jet = e.kind==='jet'||e.kind==='komet'||e.kind==='minwing'||e.kind==='drone';
-    const twin= e.kind==='bomber'||e.kind==='gunship'||e.kind==='heavy'||e.kind==='chopper';
-    const yb  = e.r*(twin?.70:.92);
-    const xs  = twin ? [-e.r*.62, e.r*.62] : [0];
-    const w   = e.r*(jet?.34:.30), L = e.r*(jet?1.55:1.15);
-    for(const ox of xs){
-      const fz=.6+.4*Math.sin(time*(jet?.55:.42)+ox+e.ph);
-      const ln=L*(.80+.42*Math.random());
-      ctx.save();
-      /* 노즐 주변 발광 */
-      ctx.globalAlpha=fz*.30;
-      ctx.fillStyle = jet ? '#8fd0ff' : '#ff9a4d';
-      ctx.beginPath(); ctx.ellipse(ox,yb+ln*.30,w*1.5,ln*.52,0,0,TAU); ctx.fill();
-      ctx.globalAlpha=1;
-      /* 화염 본체 */
-      ctx.fillStyle = jet ? 'rgba(120,196,255,'+(fz*.85)+')'
-                          : 'rgba(255,140,58,'+(fz*.85)+')';
-      poly([ox-w,yb, ox+w,yb, ox+w*.40,yb+ln, ox-w*.40,yb+ln]);
-      /* 심지 */
-      ctx.fillStyle = jet ? 'rgba(235,250,255,'+(fz*.95)+')'
-                          : 'rgba(255,240,190,'+(fz*.95)+')';
-      poly([ox-w*.52,yb, ox+w*.52,yb, ox+w*.20,yb+ln*.62, ox-w*.20,yb+ln*.62]);
-      ctx.restore();
-    }
-  }
-  const a=time*1.32+e.ph;      /* 프로펠러 회전 +20% */
+  if(!_capt) enemyFlame(e);
+  const a = _capt ? _fixA : (time*1.32+e.ph);   /* 미리 그릴 때는 고정 각도 */
   if(e.kind==='zero'){
     ctx.fillStyle=hit?'#fff':shade(17,0,'#6f7a52','#4a5238');
     poly([-17,3, -5,-4, 5,-4, 17,3, 17,8, 5,10, -5,10, -17,8]);
@@ -6292,7 +6340,8 @@ function render(){
   if(flash>0){ ctx.fillStyle='rgba('+flashCol+','+clamp(flash/50,0,.5)+')'; ctx.fillRect(0,0,W,H); }
   if(state!=='title'){ drawHUD(); drawWarn(); drawBanner(); drawTutorial(); }
   if(state==='card') drawCards();
-  if(FX>=3) ctx.drawImage(crtCv,0,0,W,H);                /* 화면 무늬 — 제일 먼저 끈다 */
+  if(FX>=3) ctx.drawImage(crtCv,0,0,W,H);
+  warmTick();                /* 화면 무늬 — 제일 먼저 끈다 */
 }
 
 /* ===================== 시작 화면 ===================== */
@@ -6615,7 +6664,7 @@ function drawTutorial(){
 function startGame(){
   goFull(); keepAwake();
   audioOn(); reset(); state='play';
-  warmProps();                      /* 첫 스테이지 구조물 그림도 미리 떠 둔다 */
+  warmProps(); warmEnemies();                      /* 첫 스테이지 구조물 그림도 미리 떠 둔다 */
   if(!tutSeen()||tutReplay){ tutReplay=0; tutStart(); } else tutOn=0;
   show('shTitle',false); show('shOver',false); show('shPause',false);
   $('hudbtns').classList.add('on'); $('bomb').classList.add('on'); kick();
