@@ -191,7 +191,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R91';
+const VER='R92';
 /* ===================== 강화 카드 =====================
    승급 포인트가 차면 3장 중 1장을 고른다. 효과는 곱으로 쌓인다. */
 /* 출격 기체 — 체력·시작 무기·카드 후보 수가 다르다 */
@@ -6133,12 +6133,6 @@ function drawTitleLogo(){
   ctx.fillText('강화 카드 · 보스 8종 · 지형 10종',W-10,20);
   ctx.fillText('© IRON WINGS II  '+VER,W-10,34);
 
-  if(Math.floor(time/26)%2===0){
-    ctx.textAlign='center'; ctx.font='bold 15px ui-monospace,monospace';
-    ctx.lineWidth=4; ctx.lineJoin='round'; ctx.strokeStyle='#100c10';
-    ctx.strokeText('P R E S S   S T A R T',W/2,H-146);
-    ctx.fillStyle='#e8edf2'; ctx.fillText('P R E S S   S T A R T',W/2,H-146);
-  }
 }
 
 let last=performance.now(), lastTick=performance.now(), looping=false, loopGen=0;
