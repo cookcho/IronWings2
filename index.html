@@ -193,7 +193,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R99';
+const VER='R100';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -579,6 +579,7 @@ function advanceStage(){
   runMedal+=gain; popText(W/2,H/2-30,'훈장 +'+gain,'#ffd24a');
   stageNo++; setTheme(stageNo);
   setBanner('STAGE '+stageNo,theme.name); sfx.stage();
+  warmProps();
   spawnT=150; stageT=0; bossWarn=0; midDone=0;
   ebullets.length=0; beams.length=0;
 }
@@ -5407,6 +5408,18 @@ function groundGlow(w,h,col){    /* 배경에서 뜨게 하는 옅은 후광 —
 }
 /* 구조물은 모양이 고정이라 한 번만 그려 두면 된다.
    배 한 척이 도형 스무 개가 넘어, 화면에 몇 척만 들어와도 주기적으로 버거웠다. */
+/* 스테이지에 나올 구조물 그림을 미리 떠 둔다.
+   처음 한 척이 화면에 들어올 때 그리느라 16ms 넘게 끊기던 것을 없앤다. */
+function warmProps(){
+  try{
+    let list=(PROPS[theme.id]||PROPS.sea||[]).slice();
+    if(stageNo>=5&&PROPS5[theme.id]) list=list.concat(PROPS5[theme.id]);
+    for(const k of new Set(list)){
+      if(SPR.get('pr|'+k)) continue;
+      drawProp({kind:k, x:-9999, y:-9999, t:0});   /* 화면 밖이라 보이지 않는다 */
+    }
+  }catch(_){}
+}
 function drawProp(p){
   if(_capt){ _drawProp(p); return; }
   const key='pr|'+p.kind;
@@ -6602,6 +6615,7 @@ function drawTutorial(){
 function startGame(){
   goFull(); keepAwake();
   audioOn(); reset(); state='play';
+  warmProps();                      /* 첫 스테이지 구조물 그림도 미리 떠 둔다 */
   if(!tutSeen()||tutReplay){ tutReplay=0; tutStart(); } else tutOn=0;
   show('shTitle',false); show('shOver',false); show('shPause',false);
   $('hudbtns').classList.add('on'); $('bomb').classList.add('on'); kick();
