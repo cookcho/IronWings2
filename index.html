@@ -192,7 +192,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R94';
+const VER='R95';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -4428,15 +4428,20 @@ function drawBoss(){
      ctx.filter 로 검게 칠하는 방법은 너무 느려 화면이 멈췄고,
      multiply 로 겹치면 필터 없이 같은 효과를 낸다. */
   if(b0&&!LOWFX){
+    /* 보스는 포신과 날개가 많아, 본체를 통째로 검게 복제하면
+       바닥에 검은 덩어리가 생긴다. 잡몹과 달리 부드러운 타원 하나로 받친다. */
     const [bw,bh]=bossBox();
-    _shadowPass=1;
-    /* 그림자 — 아래 오른쪽으로 밀어 multiply */
     ctx.save();
-    ctx.translate(clamp(bw*.17,5,22),clamp(bh*.24,7,28));
-    ctx.globalAlpha=.42; ctx.globalCompositeOperation='multiply';
-    try{ drawBossBody(); }catch(_){}
+    ctx.globalCompositeOperation='multiply';
+    const gx=b0.x+clamp(bw*.09,4,12), gy=b0.y+clamp(bh*.13,5,15);
+    for(let i=3;i>=1;i--){                 /* 세 겹을 포개 가장자리를 흐린다 */
+      ctx.globalAlpha=.13;
+      ctx.fillStyle='#140f0a';
+      ctx.beginPath();
+      ctx.ellipse(gx,gy,bw*(.30+i*.055),bh*(.26+i*.05),0,0,TAU);
+      ctx.fill();
+    }
     ctx.restore(); _tint=null;
-    _shadowPass=0;
   }
   _flashPass=0; drawBossBody(); _tint=null;
   const b=boss;
