@@ -150,6 +150,7 @@
     <h1>잠깐 멈춤</h1>
     <button class="btn" id="bResume">계속하기</button>
     <button class="btn ghost" id="bQuit">처음부터</button>
+    <button class="btn ghost tiny" id="bPerf" style="opacity:.45;font-size:10px">진단</button>
   </div>
 
   <div class="sheet" id="shOver">
@@ -193,7 +194,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R101';
+const VER='R102';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -612,11 +613,22 @@ function tone(f,dur,type,vol,slide){
   g.gain.setValueAtTime(vol||.05,t); g.gain.exponentialRampToValueAtTime(.001,t+dur);
   o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+dur+.02);
 }
+/* 잡음 음원은 길이마다 한 번만 만들어 두고 돌려 쓴다.
+   전에는 소리가 날 때마다 샘플을 하나씩 계산했다. 폭발음 한 번이
+   48kHz 에서 수만 번의 계산이라, 소리가 날 때마다 화면이 멈칫했다. */
+const NOISEBUF=new Map();
+function noiseBuf(dur){
+  const key=dur.toFixed(3);
+  let b=NOISEBUF.get(key); if(b) return b;
+  const n=Math.max(1,(actx.sampleRate*dur)|0);
+  b=actx.createBuffer(1,n,actx.sampleRate);
+  const d=b.getChannelData(0);
+  for(let i=0;i<n;i++){ const f=1-i/n; d[i]=(Math.random()*2-1)*f*f; }
+  NOISEBUF.set(key,b); return b;
+}
 function noise(dur,vol,lp){
   if(!actx||muted) return;
-  const n=(actx.sampleRate*dur)|0, buf=actx.createBuffer(1,n,actx.sampleRate), d=buf.getChannelData(0);
-  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2);
-  const s=actx.createBufferSource(); s.buffer=buf;
+  const s=actx.createBufferSource(); s.buffer=noiseBuf(dur);
   const g=actx.createGain(); g.gain.value=vol||.15;
   if(lp){ const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=lp;
     s.connect(f); f.connect(g); } else s.connect(g);
@@ -6339,6 +6351,7 @@ function render(){
   ctx.restore();
   if(flash>0){ ctx.fillStyle='rgba('+flashCol+','+clamp(flash/50,0,.5)+')'; ctx.fillRect(0,0,W,H); }
   if(state!=='title'){ drawHUD(); drawWarn(); drawBanner(); drawTutorial(); }
+  perfDraw();
   if(state==='card') drawCards();
   if(FX>=3) ctx.drawImage(crtCv,0,0,W,H);
   warmTick();                /* 화면 무늬 — 제일 먼저 끈다 */
@@ -6464,6 +6477,53 @@ let last=performance.now(), lastTick=performance.now(), looping=false, loopGen=0
 let fpsAcc=0, fpsN=0, LOWFX=0, rErr=0, rMsg='';
 /* 그래픽 단계 — 3=전부, 2=화면 무늬 끔, 1=+기체 그림자 끔 (구름은 늘 켬) */
 let FX=3, fxHold=0, judgeT=0;
+
+/* ===== 느려짐 진단 =====
+   한 프레임이 오래 걸리면 어느 부분 때문인지 화면 위에 적는다.
+   잠깐 멈춤 화면의 '진단' 으로 켜고 끈다. 평소에는 아무것도 재지 않는다. */
+let PERF=(()=>{ try{ return localStorage.getItem('iw.perf')==='1'; }catch(_){ return false; } })();
+let _pAcc=null, _pWorst='', _pWorstMs=0, _pShow=0, _pWrapped=0;
+function perfWrap(){
+  if(_pWrapped) return; _pWrapped=1;
+  const NAMES=['drawSky','drawProp','drawEnemyPlane','drawPlayerPlane','drawBoss','drawHUD',
+               'drawEBullets','drawBullets','drawParts','drawPops','drawItems','drawWrecks',
+               'scrollDraw','drawBanner','drawCards','spawnWave','spawnProp','makeTerrain','drawWings'];
+  for(const n of NAMES){
+    const f=window[n]; if(typeof f!=='function') continue;
+    window[n]=function(){ if(!PERF||!_pAcc) return f.apply(this,arguments);
+      const a=performance.now();
+      try{ return f.apply(this,arguments); }
+      finally{ _pAcc[n]=(_pAcc[n]||0)+(performance.now()-a); } };
+  }
+  for(const n of ['tone','noise']){
+    const f=window[n]; if(typeof f!=='function') continue;
+    window[n]=function(){ if(!PERF||!_pAcc) return f.apply(this,arguments);
+      const a=performance.now();
+      try{ return f.apply(this,arguments); }
+      finally{ _pAcc['소리']=(_pAcc['소리']||0)+(performance.now()-a); } };
+  }
+}
+
+function perfEnd(t0){
+  const tot=performance.now()-t0;
+  if(tot<24||!_pAcc) return;                 /* 한 프레임 예산을 넘긴 때만 */
+  let bn='', bv=0, sum=0;
+  for(const k in _pAcc){ sum+=_pAcc[k]; if(_pAcc[k]>bv){ bv=_pAcc[k]; bn=k; } }
+  const rest=Math.max(0,tot-sum);
+  if(rest>bv){ bn='그 밖(계산·수거)'; bv=rest; }
+  _pWorst = Math.round(tot)+'ms  '+bn+' '+bv.toFixed(1)+'ms';
+  _pWorstMs=tot; _pShow=180;
+}
+function perfDraw(){
+  if(!PERF) return;
+  ctx.save();
+  ctx.font='bold 10px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillStyle='rgba(0,0,0,.65)'; ctx.fillRect(4,H-96,210,16);
+  ctx.fillStyle = _pShow>0 ? '#ff9a7a' : '#8fd9a0';
+  ctx.fillText(_pWorst||'느려짐 감시 중', 8, H-93);
+  ctx.restore();
+  if(_pShow>0) _pShow--;
+}
 function loop(now,gen){
   if(gen!==loopGen) return;            /* 예전 세대의 루프는 여기서 끝난다 */
   lastTick=now;
@@ -6481,8 +6541,10 @@ function loop(now,gen){
     if(avg>1.45){ if(FX>1){ FX--; fxHold=18; } }   /* 구름은 값이 거의 안 들어 끝까지 남긴다 */
     else if(avg<1.05 && FX<3 && fxHold<=0){ FX++; fxHold=45; }
     LOWFX = (FX<=1); }
+  const _pStart = PERF ? performance.now() : 0;
+  if(PERF){ perfWrap(); _pAcc={}; }
   try{ update(dt); }catch(e){ console.error('update',e); }
-  try{ render(); rErr=0; }
+  try{ render(); rErr=0; if(PERF) perfEnd(_pStart); }
   catch(e){ console.error('render',e); rErr++; rMsg=(e&&e.message)||String(e);
     if(rErr>8){ try{
       ctx.setTransform(RS,0,0,RS,0,0); ctx.globalAlpha=1;
@@ -6789,6 +6851,11 @@ $('bUpd').onclick=async e=>{
 $('shTitle').addEventListener('pointerdown',e=>{ if(e.target.tagName!=='BUTTON') startGame(); }, true);
 $('bStart').onclick=startGame;
 $('bRetry').onclick=startGame; $('bResume').onclick=resume;
+{ const pb=$('bPerf');
+  if(pb){ pb.textContent = PERF?'진단 끄기':'진단';
+    pb.addEventListener('pointerdown',ev=>{ ev.stopPropagation();
+      PERF=!PERF; try{ localStorage.setItem('iw.perf',PERF?'1':'0'); }catch(_){}
+      pb.textContent = PERF?'진단 끄기':'진단'; if(PERF) perfWrap(); }); } }
 $('bQuit').onclick=()=>{ state='title'; show('shPause',false); show('shTitle',true);
   $('hudbtns').classList.remove('on'); $('bomb').classList.remove('on');
   enemies=[];bullets=[];ebullets=[];items=[];beams=[];boss=null; };
