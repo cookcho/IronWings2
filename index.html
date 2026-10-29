@@ -192,7 +192,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R95';
+const VER='R96';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -4343,7 +4343,7 @@ function streak(x,y,w,len,a){               /* 패널 아래로 흘러내린 때
 
 function bsh(on){
   if(_shadowPass) on=false;
-  if(on&&!LOWFX){ ctx.shadowColor='rgba(0,0,0,.58)'; ctx.shadowBlur=6;
+  if(on&&FX>=2){ ctx.shadowColor='rgba(0,0,0,.58)'; ctx.shadowBlur=6;
           ctx.shadowOffsetX=4; ctx.shadowOffsetY=6; }
   else  { ctx.shadowColor='rgba(0,0,0,0)'; ctx.shadowBlur=0;
           ctx.shadowOffsetX=0; ctx.shadowOffsetY=0; }
@@ -4427,7 +4427,7 @@ function drawBoss(){
      비껴난 테두리만 남는다 — 모양이 정확히 맞는 그림자와 반사가 공짜로 생긴다.
      ctx.filter 로 검게 칠하는 방법은 너무 느려 화면이 멈췄고,
      multiply 로 겹치면 필터 없이 같은 효과를 낸다. */
-  if(b0&&!LOWFX){
+  if(b0){                                 /* 타원 세 겹은 값이 싸서 늘 그린다 */
     /* 보스는 포신과 날개가 많아, 본체를 통째로 검게 복제하면
        바닥에 검은 덩어리가 생긴다. 잡몹과 달리 부드러운 타원 하나로 받친다. */
     const [bw,bh]=bossBox();
@@ -6163,13 +6163,13 @@ function render(){
   drawSky();
   for(const p of props) drawProp(p);
   /* 구름 — 지형 위, 기체 아래. 한 층뿐이라 지형 구조물을 가리지 않는다 */
-  if(!LOWFX&&cloudFar) scrollDraw(cloudFar,scFar);
+  if(cloudFar) scrollDraw(cloudFar,scFar);               /* 구름은 늘 그린다 — 값이 싸고 눈에 제일 띈다 */
   if(state==='title') drawTitleScene();
   if(state!=='title'){
     drawItems();
     /* 실루엣 그림자 — 기체를 그대로 한 번 더 비껴 그리고 multiply 로 겹친다.
        타원 하나로는 모양이 안 맞아 공중의 것들이 바닥에서 떠 보인다 */
-    if(!LOWFX){
+    if(FX>=2){
       _shadowPass=1;
       ctx.save();
       ctx.globalAlpha=.34; ctx.globalCompositeOperation='multiply'; ctx.translate(8,11);
@@ -6181,7 +6181,7 @@ function render(){
     if(boss) drawBoss();
     drawBeams();
     drawWings();
-    if(!LOWFX&&invT<=0){
+    if(FX>=2&&invT<=0){
       _shadowPass=1;
       ctx.save();
       ctx.globalAlpha=.32; ctx.globalCompositeOperation='multiply'; ctx.translate(8,11);
@@ -6203,7 +6203,7 @@ function render(){
   if(flash>0){ ctx.fillStyle='rgba('+flashCol+','+clamp(flash/50,0,.5)+')'; ctx.fillRect(0,0,W,H); }
   if(state!=='title'){ drawHUD(); drawWarn(); drawBanner(); drawTutorial(); }
   if(state==='card') drawCards();
-  if(!LOWFX) ctx.drawImage(crtCv,0,0,W,H);
+  if(FX>=3) ctx.drawImage(crtCv,0,0,W,H);                /* 화면 무늬 — 제일 먼저 끈다 */
 }
 
 /* ===================== 시작 화면 ===================== */
@@ -6324,13 +6324,25 @@ function drawTitleLogo(){
 
 let last=performance.now(), lastTick=performance.now(), looping=false, loopGen=0;
 let fpsAcc=0, fpsN=0, LOWFX=0, rErr=0, rMsg='';
+/* 그래픽 단계 — 3=전부, 2=화면 무늬 끔, 1=+기체 그림자 끔 (구름은 늘 켬) */
+let FX=3, fxHold=0, judgeT=0;
 function loop(now,gen){
   if(gen!==loopGen) return;            /* 예전 세대의 루프는 여기서 끝난다 */
   lastTick=now;
-  let dt=(now-last)/16.6667; last=now; dt=clamp(dt,0,2.2);
+  const rawDt=now-last;
+  let dt=rawDt/16.6667; last=now; dt=clamp(dt,0,2.2);
   fpsAcc+=dt; fpsN++;
-  if(fpsN>=40){ const avg=fpsAcc/fpsN; fpsAcc=0; fpsN=0;
-    if(avg>1.55) LOWFX=1; else if(avg<1.15) LOWFX=0; }
+  /* 프레임 수가 아니라 흐른 시간으로 판정한다.
+     아주 느린 기기는 40프레임을 모으는 데 몇 십 초가 걸려,
+     정작 도움이 필요한 기기에서 조절이 영영 일어나지 않았다. */
+  judgeT+=Math.min(rawDt,120);
+  if(judgeT>=700){ const avg=fpsAcc/fpsN; judgeT=0; fpsAcc=0; fpsN=0;
+    if(fxHold>0) fxHold--;
+    /* 한 단계씩 내리고, 올릴 때는 한참 여유로울 때만 — 효과가 깜빡이지 않게 한다.
+       비싼 것부터 끈다: 화면 무늬(약 20%) → 기체 그림자(약 57%). */
+    if(avg>1.45){ if(FX>1){ FX--; fxHold=18; } }   /* 구름은 값이 거의 안 들어 끝까지 남긴다 */
+    else if(avg<1.05 && FX<3 && fxHold<=0){ FX++; fxHold=45; }
+    LOWFX = (FX<=1); }
   try{ update(dt); }catch(e){ console.error('update',e); }
   try{ render(); rErr=0; }
   catch(e){ console.error('render',e); rErr++; rMsg=(e&&e.message)||String(e);
