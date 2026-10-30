@@ -194,7 +194,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R102';
+const VER='R103';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -6723,6 +6723,9 @@ function drawTutorial(){
   }
   ctx.restore();
 }
+/* 사람이 화면에 손을 댔는지 — 새 버전 새로고침을 미루는 데 쓴다 */
+let userActed=false;
+try{ document.addEventListener('pointerdown',()=>{ userActed=true; },{capture:true,passive:true}); }catch(_){}
 function startGame(){
   goFull(); keepAwake();
   audioOn(); reset(); state='play';
@@ -6924,11 +6927,16 @@ if('serviceWorker' in navigator){
       setInterval(()=>{ try{ reg.update(); }catch(_){} }, 30*60*1000);
     }).catch(()=>{});
   });
-  /* 새 버전이 준비되면 시작 화면에 있을 때만 조용히 새로고침한다 */
+  /* 새 버전이 준비되면 조용히 새로고침한다 — 다만 사람이 손을 댄 뒤에는 하지 않는다.
+     출격을 누르는 순간과 겹치면 시작 화면으로 튕긴 것처럼 보이기 때문이다.
+     건너뛴 새 버전은 다음에 앱을 열 때 자연스럽게 적용된다. */
   let swReloaded=false;
   navigator.serviceWorker.addEventListener('controllerchange',()=>{
     if(swReloaded) return; swReloaded=true;
-    if(state==='title'){ try{ location.reload(); }catch(_){} }
+    if(state!=='title'||userActed) return;
+    setTimeout(()=>{                       /* 한 박자 뒤 다시 확인 — 그 사이 눌렀을 수 있다 */
+      if(state==='title'&&!userActed){ try{ location.reload(); }catch(_){} }
+    },450);
   });
 }
 
