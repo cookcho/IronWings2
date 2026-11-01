@@ -194,7 +194,7 @@ const TERR_TILES=3;            /* 지형 타일 = 화면 3장. 같은 그림이 
 /* 도트 보존 — 캔버스 안에서도, 화면으로 확대될 때도 보간하지 않는다 */
 ctx.imageSmoothingEnabled=false;
 const PI=Math.PI, TAU=PI*2;
-const VER='R104';
+const VER='R105';
 
 /* ===== 언어 =====
    글자를 그리는 길목 한 곳에서 바꾼다. 게임 코드는 손대지 않는다.
@@ -2090,23 +2090,35 @@ function setBanner(t,s){ bannerTxt=t; bannerSub=s||''; bannerT=140; }
 /* 지형 굽기는 100ms 를 훌쩍 넘어 그동안 화면이 멈춘다.
    시작 화면에 있는 동안 1스테이지 것을 미리 구워 두면 출격 직후가 매끄럽다. */
 let _preT=null, _preTid=null;
+let _preDue=0;   /* 다음 스테이지 지형을 미리 구울 때까지 남은 프레임 */
+let _preC=null;
 function prebakeTerrain(id){
   if(_preTid===id&&_preT) return;
-  try{ _preT=makeTerrain(id); _preTid=id; }catch(_){ _preT=null; _preTid=null; }
+  try{
+    _preT=makeTerrain(id);
+    const t0=THEMES.find(t=>t.id===id);
+    _preC=cloudLayer(6,22,.92,t0&&t0.cloud);      /* 구름도 함께 — 이것도 값이 든다 */
+    _preTid=id;
+  }catch(_){ _preT=null; _preC=null; _preTid=null; }
 }
 function takeTerrain(id){
   if(_preTid===id&&_preT){ const t=_preT; _preT=null; _preTid=null; return t; }
   return makeTerrain(id);
+}
+function takeCloud(th){
+  if(_preC){ const c=_preC; _preC=null; return c; }
+  return cloudLayer(6,22,.92,th&&th.cloud);
 }
 function setTheme(n){
   theme=THEMES[(n-1)%THEMES.length];
   terrain=takeTerrain(theme.id);
   /* 구름도 테마에 맞춰 새로 굽는다 — 야간에 흰 구름이 뜨면 어색하다.
      한 층만 쓴다. 두 층을 겹치면 화면이 안개가 됐다 */
-  cloudFar=cloudLayer(6,22,.92,theme.cloud);
+  cloudFar=takeCloud(theme);
   /* 지형 생성은 수백 ms가 걸린다. 그동안 프레임이 멈춘 것을
      '루프가 죽었다'고 오해하지 않도록 시계를 다시 맞춘다 */
   const nw=performance.now(); last=nw; lastTick=nw;
+  _preDue=130;        /* 약 2초 뒤, 첫 웨이브가 나오기 전 조용할 때 다음 것을 굽는다 */
 }
 
 function reset(){
@@ -2631,6 +2643,11 @@ function update(dt){
   /* 스테이지 진행 */
   if(!boss&&bossWarn<=0){
     stageT+=dt; spawnT-=dt;
+    if(_preDue>0){ _preDue-=dt;
+      if(_preDue<=0&&!boss){        /* 보스전 중에는 건드리지 않는다 */
+        try{ prebakeTerrain(THEMES[stageNo%THEMES.length].id); }catch(_){}
+        const nw2=performance.now(); last=nw2; lastTick=nw2;   /* 멈춘 만큼 시계를 다시 맞춘다 */
+      } }
     if(spawnT<=0) spawnWave();
     if(Math.random()<.008*dt) spawnProp();
     if(stageNo>=4&&!midDone&&stageT>60*11){   /* 중반에 중간 보스 */
